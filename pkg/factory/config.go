@@ -21,7 +21,7 @@ const (
 	PcfDefaultCertPemPath       = "./cert/pcf.pem"
 	PcfDefaultPrivateKeyPath    = "./cert/pcf.key"
 	PcfDefaultConfigPath        = "./config/pcfcfg.yaml"
-	PcfSbiDefaultIPv4           = "127.0.0.7"
+	PcfSbiDefaultIP             = "127.0.0.7"
 	PcfSbiDefaultPort           = 8000
 	PcfSbiDefaultScheme         = "https"
 	PcfDefaultNrfUri            = "https://127.0.0.10:8000"
@@ -159,18 +159,46 @@ func (s *Service) validate() (bool, error) {
 }
 
 type Sbi struct {
-	Scheme       string `yaml:"scheme" valid:"required,scheme"`
-	RegisterIPv4 string `yaml:"registerIPv4,omitempty" valid:"required,host"` // IP that is registered at NRF.
-	// IPv6Addr  string `yaml:"ipv6Addr,omitempty"`
-	BindingIPv4 string `yaml:"bindingIPv4,omitempty" valid:"required,host"` // IP used to run the server in the node.
-	Port        int    `yaml:"port,omitempty" valid:"required,port"`
-	Tls         *Tls   `yaml:"tls,omitempty" valid:"optional"`
+	Scheme       string `yaml:"scheme" valid:"in(http|https),optional"`
+	RegisterIPv4 string `yaml:"registerIPv4,omitempty" valid:"host,optional"` // IP that is registered at NRF.
+	RegisterIP   string `yaml:"registerIP,omitempty" valid:"host,optional"`   // IP that is registered at NRF.
+	BindingIPv4  string `yaml:"bindingIPv4,omitempty" valid:"host,optional"`  // IP used to run the server in the node.
+	BindingIP    string `yaml:"bindingIP,omitempty" valid:"host,optional"`    // IP used to run the server in the node.
+	Port         int    `yaml:"port,omitempty" valid:"port,optional"`
+	Tls          *Tls   `yaml:"tls,omitempty" valid:"optional"`
 }
 
 func (s *Sbi) validate() (bool, error) {
-	govalidator.TagMap["scheme"] = govalidator.Validator(func(str string) bool {
-		return str == "https" || str == "http"
-	})
+	// Set a default Schme if the Configuration does not provides one
+	if s.Scheme == "" {
+		s.Scheme = PcfSbiDefaultScheme
+	}
+
+	// Set BindingIP/RegisterIP from deprecated BindingIPv4/RegisterIPv4
+	if s.BindingIP == "" && s.BindingIPv4 != "" {
+		s.BindingIP = s.BindingIPv4
+	}
+	if s.RegisterIP == "" && s.RegisterIPv4 != "" {
+		s.RegisterIP = s.RegisterIPv4
+	}
+
+	// Set a default BindingIP/RegisterIP if the Configuration does not provides them
+	if s.BindingIP == "" && s.RegisterIP == "" {
+		s.BindingIP = PcfSbiDefaultIP
+		s.RegisterIP = PcfSbiDefaultIP
+	} else {
+		// Complete any missing BindingIP/RegisterIP from RegisterIP/BindingIP
+		if s.BindingIP == "" {
+			s.BindingIP = s.RegisterIP
+		} else if s.RegisterIP == "" {
+			s.RegisterIP = s.BindingIP
+		}
+	}
+
+	// Set a default Port if the Configuration does not provides one
+	if s.Port == 0 {
+		s.Port = PcfSbiDefaultPort
+	}
 
 	if tls := s.Tls; tls != nil {
 		if result, err := tls.validate(); err != nil {
@@ -178,11 +206,7 @@ func (s *Sbi) validate() (bool, error) {
 		}
 	}
 
-	if _, err := govalidator.ValidateStruct(s); err != nil {
-		return false, appendInvalid(err)
-	}
-
-	return true, nil
+	return govalidator.ValidateStruct(s)
 }
 
 type Tls struct {

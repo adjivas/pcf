@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -24,8 +26,8 @@ type PCFContext struct {
 	NfId            string
 	Name            string
 	UriScheme       models.UriScheme
-	BindingIPv4     string
-	RegisterIPv4    string
+	BindingIP       netip.Addr
+	RegisterIP      netip.Addr
 	SBIPort         int
 	TimeFormat      string
 	DefaultBdtRefId string
@@ -101,36 +103,22 @@ func InitPcfContext(context *PCFContext) {
 	sbi := configuration.Sbi
 	context.NrfUri = configuration.NrfUri
 	context.NrfCertPem = configuration.NrfCertPem
-	context.UriScheme = ""
-	context.RegisterIPv4 = factory.PcfSbiDefaultIPv4 // default localhost
-	context.SBIPort = factory.PcfSbiDefaultPort      // default port
-	if sbi != nil {
-		if sbi.Scheme != "" {
-			context.UriScheme = models.UriScheme(sbi.Scheme)
-		}
-		if sbi.RegisterIPv4 != "" {
-			context.RegisterIPv4 = sbi.RegisterIPv4
-		}
-		if sbi.Port != 0 {
-			context.SBIPort = sbi.Port
-		}
-		if sbi.Scheme == "https" {
-			context.UriScheme = models.UriScheme_HTTPS
-		} else {
-			context.UriScheme = models.UriScheme_HTTP
-		}
 
-		context.BindingIPv4 = os.Getenv(sbi.BindingIPv4)
-		if context.BindingIPv4 != "" {
-			logger.UtilLog.Info("Parsing ServerIPv4 address from ENV Variable.")
-		} else {
-			context.BindingIPv4 = sbi.BindingIPv4
-			if context.BindingIPv4 == "" {
-				logger.UtilLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
-				context.BindingIPv4 = "0.0.0.0"
-			}
-		}
+	context.SBIPort = sbi.Port
+
+	context.UriScheme = models.UriScheme(sbi.Scheme)
+
+	if bindingIP := os.Getenv(sbi.BindingIP); bindingIP != "" {
+		logger.UtilLog.Info("Parsing BindingIP address from ENV Variable.")
+		sbi.BindingIP = bindingIP
 	}
+	if registerIP := os.Getenv(sbi.RegisterIP); registerIP != "" {
+		logger.UtilLog.Info("Parsing RegisterIP address from ENV Variable.")
+		sbi.RegisterIP = registerIP
+	}
+	context.BindingIP = resolveIP(sbi.BindingIP)
+	context.RegisterIP = resolveIP(sbi.RegisterIP)
+
 	serviceList := configuration.ServiceList
 	context.InitNFService(serviceList, config.Info.Version)
 	context.TimeFormat = configuration.TimeFormat
@@ -145,6 +133,18 @@ func InitPcfContext(context *PCFContext) {
 		}
 	}
 	context.Locality = configuration.Locality
+}
+
+func resolveIP(ip string) netip.Addr {
+	resolvedIPs, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", ip)
+	if err != nil {
+		logger.InitLog.Errorf("Lookup failed with %s: %+v", ip, err)
+	}
+	resolvedIP := resolvedIPs[0].Unmap()
+	if resolvedIP := resolvedIP.String(); resolvedIP != ip {
+		logger.UtilLog.Infof("Lookup revolved %s into %s", ip, resolvedIP)
+	}
+	return resolvedIP
 }
 
 func Init() {
@@ -187,8 +187,32 @@ var (
 // BdtPolicy default value
 const DefaultBdtRefId = "BdtPolicyId-"
 
-func (c *PCFContext) GetIPv4Uri() string {
-	return fmt.Sprintf("%s://%s:%d", c.UriScheme, c.RegisterIPv4, c.SBIPort)
+func (c *PCFContext) GetIPUri() string {
+	addr := c.RegisterIP
+	port := c.SBIPort
+
+	return fmt.Sprintf("%s://%s", c.UriScheme, netip.AddrPortFrom(addr, uint16(port)).String())
+}
+
+func (c *PCFContext) GetIpEndPoint() []models.IpEndPoint {
+	if c.RegisterIP.Is6() {
+		return []models.IpEndPoint{
+			{
+				Ipv6Address: c.RegisterIP.String(),
+				Transport:   models.NrfNfManagementTransportProtocol_TCP,
+				Port:        int32(c.SBIPort),
+			},
+		}
+	} else if c.RegisterIP.Is4() {
+		return []models.IpEndPoint{
+			{
+				Ipv4Address: c.RegisterIP.String(),
+				Transport:   models.NrfNfManagementTransportProtocol_TCP,
+				Port:        int32(c.SBIPort),
+			},
+		}
+	}
+	return nil
 }
 
 // Init NfService with supported service list ,and version of services
@@ -206,16 +230,10 @@ func (c *PCFContext) InitNFService(serviceList []factory.Service, version string
 					ApiVersionInUri: versionUri,
 				},
 			},
-			Scheme:          c.UriScheme,
-			NfServiceStatus: models.NfServiceStatus_REGISTERED,
-			ApiPrefix:       c.GetIPv4Uri(),
-			IpEndPoints: []models.IpEndPoint{
-				{
-					Ipv4Address: c.RegisterIPv4,
-					Transport:   models.NrfNfManagementTransportProtocol_TCP,
-					Port:        int32(c.SBIPort),
-				},
-			},
+			Scheme:            c.UriScheme,
+			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
+			ApiPrefix:         c.GetIPUri(),
+			IpEndPoints:       c.GetIpEndPoint(),
 			SupportedFeatures: service.SuppFeat,
 		}
 	}

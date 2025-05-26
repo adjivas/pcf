@@ -53,7 +53,7 @@ func (s *namfService) AmfStatusChangeSubscribe(amfUri string, guamiList []models
 	client := s.getNFCommunicationClient(amfUri)
 
 	subscriptionData := models.AmfCommunicationSubscriptionData{
-		AmfStatusUri: fmt.Sprintf("%s"+factory.PcfCallbackResUriPrefix+"/amfstatus", pcfContext.GetIPv4Uri()),
+		AmfStatusUri: fmt.Sprintf("%s"+factory.PcfCallbackResUriPrefix+"/amfstatus", pcfContext.GetIPUri()),
 		GuamiList:    guamiList,
 	}
 	amfStausChangeRequest := &Communication.AMFStatusChangeSubscribeRequest{}

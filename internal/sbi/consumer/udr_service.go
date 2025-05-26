@@ -299,7 +299,7 @@ func (s *nudrService) buildTrafficInfluSub(request models.SmPolicyContextData) m
 		Snssais:          []models.Snssai{*request.SliceInfo},
 		InternalGroupIds: request.InterGrpIds,
 		Supis:            []string{request.Supi},
-		NotificationUri: s.consumer.Context().GetIPv4Uri() +
+		NotificationUri: s.consumer.Context().GetIPUri() +
 			pcf_context.InfluenceDataUpdateNotifyUri + "/" +
 			request.Supi + "/" + strconv.Itoa(int(request.PduSessionId)),
 		// TODO: support expiry time and resend subscription when expired

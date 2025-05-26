@@ -160,7 +160,11 @@ func (s *nnrfService) BuildNFInstance(
 	profile.NfInstanceId = context.NfId
 	profile.NfType = models.NrfNfManagementNfType_PCF
 	profile.NfStatus = models.NrfNfManagementNfStatus_REGISTERED
-	profile.Ipv4Addresses = append(profile.Ipv4Addresses, context.RegisterIPv4)
+	if context.RegisterIP.Is6() {
+		profile.Ipv6Addresses = append(profile.Ipv6Addresses, context.RegisterIP.String())
+	} else if context.RegisterIP.Is4() {
+		profile.Ipv4Addresses = append(profile.Ipv4Addresses, context.RegisterIP.String())
+	}
 	services := []models.NrfNfManagementNfService{}
 	for _, nfService := range context.NfService {
 		services = append(services, nfService)
