@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -112,8 +113,12 @@ func NewServer(pcf pcf, tlsKeyLogPath string) (*Server, error) {
 	uePolicyGroup := s.router.Group(factory.PcfUePolicyCtlResUriPrefix)
 	applyRoutes(uePolicyGroup, uePolicyRoutes)
 
-	cfg := s.Config()
-	bindAddr := cfg.GetSbiBindingAddr()
+	addr := s.Context().RegisterIP
+	port := uint16(s.Context().SBIPort)
+
+	bind := netip.AddrPortFrom(addr, port).String()
+	bindAddr := fmt.Sprintf("%s", bind)
+
 	logger.SBILog.Infof("Binding addr: [%s]", bindAddr)
 	var err error
 	if s.httpServer, err = httpwrapper.NewHttp2Server(bindAddr, tlsKeyLogPath, s.router); err != nil {

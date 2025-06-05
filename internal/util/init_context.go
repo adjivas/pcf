@@ -1,20 +1,23 @@
 package util
 
 import (
+	"context"
+	"net"
+	"net/netip"
 	"os"
 
 	"github.com/google/uuid"
 
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pcf/internal/context"
+	pcf_context "github.com/free5gc/pcf/internal/context"
 	"github.com/free5gc/pcf/internal/logger"
 	"github.com/free5gc/pcf/pkg/factory"
 	"github.com/free5gc/util/mongoapi"
 )
 
 // Init PCF Context from config flie
-func InitpcfContext(context *context.PCFContext) {
+func InitpcfContext(context *pcf_context.PCFContext) {
 	config := factory.PcfConfig
 	logger.UtilLog.Infof("pcfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
@@ -32,36 +35,22 @@ func InitpcfContext(context *context.PCFContext) {
 
 	sbi := configuration.Sbi
 	context.NrfUri = configuration.NrfUri
-	context.UriScheme = ""
-	context.RegisterIPv4 = factory.PcfSbiDefaultIPv4 // default localhost
-	context.SBIPort = factory.PcfSbiDefaultPort      // default port
-	if sbi != nil {
-		if sbi.Scheme != "" {
-			context.UriScheme = models.UriScheme(sbi.Scheme)
-		}
-		if sbi.RegisterIPv4 != "" {
-			context.RegisterIPv4 = sbi.RegisterIPv4
-		}
-		if sbi.Port != 0 {
-			context.SBIPort = sbi.Port
-		}
-		if sbi.Scheme == "https" {
-			context.UriScheme = models.UriScheme_HTTPS
-		} else {
-			context.UriScheme = models.UriScheme_HTTP
-		}
 
-		context.BindingIPv4 = os.Getenv(sbi.BindingIPv4)
-		if context.BindingIPv4 != "" {
-			logger.UtilLog.Info("Parsing ServerIPv4 address from ENV Variable.")
-		} else {
-			context.BindingIPv4 = sbi.BindingIPv4
-			if context.BindingIPv4 == "" {
-				logger.UtilLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
-				context.BindingIPv4 = "0.0.0.0"
-			}
-		}
+	context.SBIPort = sbi.Port
+
+	context.UriScheme = models.UriScheme(sbi.Scheme)
+
+	if bindingIP := os.Getenv(sbi.BindingIP); bindingIP != "" {
+		logger.UtilLog.Info("Parsing BindingIP address from ENV Variable.")
+		sbi.BindingIP = bindingIP
 	}
+	if registerIP := os.Getenv(sbi.RegisterIP); registerIP != "" {
+		logger.UtilLog.Info("Parsing RegisterIP address from ENV Variable.")
+		sbi.RegisterIP = registerIP
+	}
+	context.BindingIP = resolveIP(sbi.BindingIP)
+	context.RegisterIP = resolveIP(sbi.RegisterIP)
+
 	serviceList := configuration.ServiceList
 	context.InitNFService(serviceList, config.Info.Version)
 	context.TimeFormat = configuration.TimeFormat
@@ -76,4 +65,37 @@ func InitpcfContext(context *context.PCFContext) {
 		}
 	}
 	context.Locality = configuration.Locality
+}
+
+func resolveIP(ip string) netip.Addr {
+	resolvedIPs, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", ip)
+	if err != nil {
+		logger.InitLog.Errorf("Lookup failed with %s: %+v", ip, err)
+	}
+	resolvedIP := resolvedIPs[0].Unmap()
+	if resolvedIP := resolvedIP.String(); resolvedIP != ip {
+		logger.UtilLog.Infof("Lookup revolved %s into %s", ip, resolvedIP)
+	}
+	return resolvedIP
+}
+
+func GetIpEndPoint(context *pcf_context.PCFContext) []models.IpEndPoint {
+	if context.RegisterIP.Is6() {
+		return []models.IpEndPoint{
+			{
+				Ipv6Address: context.RegisterIP.String(),
+				Transport:   models.NrfNfManagementTransportProtocol_TCP,
+				Port:        int32(context.SBIPort),
+			},
+		}
+	} else if context.RegisterIP.Is4() {
+		return []models.IpEndPoint{
+			{
+				Ipv4Address: context.RegisterIP.String(),
+				Transport:   models.NrfNfManagementTransportProtocol_TCP,
+				Port:        int32(context.SBIPort),
+			},
+		}
+	}
+	return nil
 }
