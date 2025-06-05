@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/asaskevich/govalidator"
-
 	"github.com/free5gc/pcf/internal/logger"
 )
 
@@ -59,7 +58,7 @@ type Info struct {
 type Configuration struct {
 	PcfName         string    `yaml:"pcfName,omitempty" valid:"required, type(string)"`
 	Sbi             *Sbi      `yaml:"sbi,omitempty" valid:"required"`
-	TimeFormat      string    `yaml:"timeFormat,omitempty" valid:"required"`
+	TimeFormat      string    `yaml:"timeFormat,omitempty" valid:"required, type(string)"`
 	DefaultBdtRefId string    `yaml:"defaultBdtRefId,omitempty" valid:"required, type(string)"`
 	NrfUri          string    `yaml:"nrfUri,omitempty" valid:"required, url"`
 	NrfCertPem      string    `yaml:"nrfCertPem,omitempty" valid:"optional"`
